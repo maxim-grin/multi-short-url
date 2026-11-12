@@ -153,7 +153,8 @@ wrapped at 72. Types: `feat`, `fix`, `refactor`, `perf`, `style`, `test`,
 **Keep the body short: at most about 20 words saying what the change adds.**
 Leave out where it was copied from, what was dropped and what was considered;
 the diff and the PR description carry that. A subject that says it all needs no
-body.
+body. A pull request description follows the same rule: a line or two on what
+the change adds, with no list of what was left out or why.
 
 **No `Co-Authored-By` trailer and no generated-with footer.** Agents working
 here do not sign commits, and the same goes for pull request descriptions --
