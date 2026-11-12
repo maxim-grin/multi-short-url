@@ -50,6 +50,8 @@ commit.
 - One test suite, no fast/slow split. Tests do not need a cloud account or
   credentials; the contract suite runs every store against the in-memory
   reference, and real cloud stores are checked by hand after a deploy.
+- Comments are short. Say why, never what the code already says; one line
+  unless the reason needs more. No history ("changed from...") or narration.
 - Runtime dependencies stay empty in the core. Adding one needs a reason a
   reviewer can read in the PR.
 
@@ -147,6 +149,11 @@ credentials where the cloud supports it, not stored keys.
 Subject <= 50 characters, imperative, lowercase, no trailing period; body
 wrapped at 72. Types: `feat`, `fix`, `refactor`, `perf`, `style`, `test`,
 `docs`, `build`, `ops`, `chore`.
+
+**Keep the body short: at most about 20 words saying what the change adds.**
+Leave out where it was copied from, what was dropped and what was considered;
+the diff and the PR description carry that. A subject that says it all needs no
+body.
 
 **No `Co-Authored-By` trailer and no generated-with footer.** Agents working
 here do not sign commits, and the same goes for pull request descriptions --
