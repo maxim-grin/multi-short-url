@@ -1,13 +1,20 @@
+import json
 import random
 import re
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
-from .codes import is_code
+from .codes import is_code, new_code
 from .limiter import RateLimiter
-from .store import Store, StoreError
+from .store import KEEP, TRIGGER, Store, StoreError
+from .urls import check_url
 
 NOSNIFF = {"X-Content-Type-Options": "nosniff"}
+JSON = {"Content-Type": "application/json", **NOSNIFF}
+MAX_ATTEMPTS = 5
+MAX_BODY = 8192
 TEXT = {"Content-Type": "text/plain; charset=utf-8", **NOSNIFF}
 
 
@@ -41,6 +48,10 @@ class Settings:
         object.__setattr__(self, "base_url", self.base_url.removesuffix("/"))
 
 
+def error(status: int, reason: str, **extra: str) -> Response:
+    return Response(status, {**JSON, **extra}, json.dumps({"error": reason}).encode())
+
+
 def text(status: int, body: str, **extra: str) -> Response:
     return Response(status, {**TEXT, **extra}, body.encode())
 
@@ -61,7 +72,9 @@ class Shortener:
                 return text(200, "ok")
             return text(405, "method not allowed", Allow="GET, HEAD")
         if path == "/api/shorten":
-            return text(405, "method not allowed", Allow="POST")
+            if method != "POST":
+                return text(405, "method not allowed", Allow="POST")
+            return self._create(request.body)
         parts = path.split("/")
         if (
             len(parts) == 3
@@ -81,3 +94,36 @@ class Shortener:
         if url is None:
             return text(404, "not found")
         return Response(302, {"Location": url, **NOSNIFF}, b"")
+
+    def _create(self, body: bytes) -> Response:
+        if len(body) > MAX_BODY:
+            return error(413, "body too large")
+        try:
+            data = json.loads(body)
+        except ValueError:  # includes bad UTF-8
+            return error(400, "body must be JSON")
+        url = data.get("url") if isinstance(data, dict) else None
+        if not isinstance(url, str):
+            return error(400, 'body must be {"url": "<string>"}')
+        own_host = (urlsplit(self.settings.base_url).hostname or "").lower()
+        if reason := check_url(url, own_host):
+            return error(400, reason)
+        if not self.limiter.allow():
+            return error(
+                429,
+                "rate limit exceeded",
+                **{"Retry-After": str(self.limiter.retry_after())},
+            )
+        try:
+            for _ in range(MAX_ATTEMPTS):
+                code = new_code(self.rng)
+                if self.store.create_if_absent(code, url):
+                    break
+            else:
+                return error(503, "service unavailable")
+        except StoreError:
+            return error(503, "service unavailable")
+        with suppress(StoreError):  # the link exists; the next create retries the trim
+            self.store.trim(KEEP, TRIGGER)
+        short = f"{self.settings.base_url}/{self.settings.prefix}/{code}"
+        return Response(201, dict(JSON), json.dumps({"short_url": short}).encode())
