@@ -17,9 +17,9 @@ interesting part; running it everywhere is.
 
 ## Status
 
-Early. The core and a standard-library server are written; nothing is deployed. Planned targets: the
-homelab (Kubernetes through ArgoCD, with its manifests in a separate repo), AWS,
-Azure, Google Cloud, Cloudflare, Oracle Cloud and Vercel.
+Early. The core and a standard-library server are written; nothing is deployed.
+Planned targets: the homelab (Kubernetes through ArgoCD, with its manifests in a
+separate repo), AWS, Azure, Google Cloud, Cloudflare, Oracle Cloud and Vercel.
 
 ## Design choices
 

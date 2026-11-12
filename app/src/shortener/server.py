@@ -52,50 +52,65 @@ def to_request(
     return Request(method, path, headers, body)
 
 
+def _length(content_length: str | None, limit: int) -> int | Response:
+    # The one place that parses Content-Length and picks 413 versus 400.
+    if content_length is None or not (
+        content_length.isascii() and content_length.isdigit()
+    ):
+        return error(400, "bad Content-Length")
+    if len(content_length) > 10 or int(content_length) > limit:  # cap before int()
+        return error(413, "body too large")
+    return int(content_length)
+
+
 def read_body(
     rfile: BufferedIOBase, content_length: str | None, limit: int = MAX_BODY
 ) -> bytes | None:
-    if content_length is None or not content_length.isascii():
-        return None
-    if not content_length.isdigit() or int(content_length) > limit:
-        return None
-    return rfile.read(int(content_length))
+    length = _length(content_length, limit)
+    return None if isinstance(length, Response) else rfile.read(length)
+
+
+def respond(
+    app: Shortener,
+    method: str,
+    target: str,
+    headers: Mapping[str, str],
+    rfile: BufferedIOBase,
+) -> Response:
+    try:
+        body = b""
+        if method == "POST":
+            length = _length(headers.get("Content-Length"), MAX_BODY)
+            if isinstance(length, Response):
+                return length
+            body = rfile.read(length)
+        return app.handle(to_request(method, target, headers, body))
+    except Exception:  # noqa: BLE001 - last resort: never leak a traceback
+        traceback.print_exc()
+        return text(500, "internal server error")
+
+
+def body_for(method: str, response: Response) -> bytes:
+    return b"" if method == "HEAD" else response.body
 
 
 def make_handler(app: Shortener) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
+        timeout = 10  # a stalled client must not hold a thread forever
+
         def _serve(self) -> None:
-            try:
-                response = self._respond()
-            except Exception:  # noqa: BLE001 - last resort: never leak a traceback
-                traceback.print_exc()
-                response = text(500, "internal server error")
+            response = respond(app, self.command, self.path, self.headers, self.rfile)  # type: ignore[arg-type]
+            if response.status in (400, 413):
+                self.close_connection = True  # an unread body would poison it
             self.send_response(response.status)
             for name, value in response.headers.items():
                 self.send_header(name, value)
             self.send_header("Content-Length", str(len(response.body)))
             self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(response.body)
-
-        def _respond(self) -> Response:
-            body = b""
-            if self.command == "POST":
-                length = self.headers.get("Content-Length")
-                read = read_body(self.rfile, length)
-                if read is None:
-                    too_big = (length or "").isdigit() and int(length or 0) > MAX_BODY
-                    self.close_connection = True  # the unread body would poison it
-                    return error(
-                        413 if too_big else 400,
-                        "body too large" if too_big else "bad Content-Length",
-                    )
-                body = read
-            return app.handle(
-                to_request(self.command, self.path, dict(self.headers), body)
-            )
+            self.wfile.write(body_for(self.command, response))
 
         do_GET = do_HEAD = do_POST = _serve
+        do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _serve
 
     return Handler
 
@@ -116,5 +131,6 @@ def main() -> None:
     try:
         server.serve_forever()
     finally:
+        # Known limit: a request thread may be mid-request; the process is exiting.
         server.server_close()
         store.close()
