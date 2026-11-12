@@ -1,0 +1,74 @@
+# Without this, `pre-commit install` wires up only the pre-commit stage and
+# the commit-msg hook is silently never installed -- a malformed commit
+# message then lands unchecked and nothing says why.
+default_install_hook_types: [pre-commit, commit-msg]
+
+# A hook that names no stages would otherwise run at every installed stage:
+# the file checks would run a second time, on no files, at commit-msg.
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+      - id: mixed-line-ending
+
+      # A gitignore typo should not be the only thing between a private
+      # key and GitHub.
+      - id: detect-private-key
+
+  # Broader than detect-private-key: catches API tokens and cloud
+  # credentials, in case a tfvars or .env file is ever committed by force
+  # or copied under another name.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  # Lint and format Python. `ruff check` fixes nothing silently; fix what it
+  # reports.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, refactor, perf, style, test, docs, build, ops, chore]
+
+  # What conventional-pre-commit does not check: subject <= 50, body <= 72,
+  # no Co-Authored-By or "Generated with" line (CLAUDE.md, "Commits").
+  - repo: local
+    hooks:
+      - id: commit-msg-format
+        name: commit message length and attribution
+        entry: scripts/check-commit-msg.py
+        language: script
+        stages: [commit-msg]
+
+      # terraform fmt needs the terraform binary, so this is a system hook.
+      # -recursive because shared modules live outside the per-cloud
+      # directories and are edited just as often.
+      - id: terraform-fmt
+        name: terraform fmt
+        language: system
+        entry: terraform fmt -recursive -check -diff
+        files: ^terraform/.*\.tf$
+        pass_filenames: false

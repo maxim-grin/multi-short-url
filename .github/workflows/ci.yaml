@@ -1,0 +1,212 @@
+name: ci
+
+# No `paths:` filter on the workflow: with required checks, a workflow skipped
+# by one leaves its checks pending forever and blocks merge. Jobs gate
+# themselves on the `changes` job instead.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PRE_COMMIT_VERSION: "4.6.2"
+  UV_VERSION: "0.13.2"
+  TERRAFORM_VERSION: "1.16.6"
+  TFLINT_VERSION: "v0.64.0"
+  GITLEAKS_VERSION: "8.30.0"
+  # SHA-256 of each release asset downloaded below, from GitHub's per-asset
+  # digest. For a new version:
+  #   gh api repos/<owner>/<repo>/releases/tags/<tag> \
+  #     --jq '.assets[] | select(.name=="<asset>") | .digest'
+  GITLEAKS_SHA256: "79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e"
+
+jobs:
+  # Which areas a pull request touches. The jobs below skip themselves when
+  # their area is untouched; a skipped job counts as passing for the
+  # required checks, which is why the gating is here and not in `on:` paths
+  # (a skipped workflow leaves its checks pending and blocks the merge).
+  # A push to main skips this step and every gated job runs.
+  changes:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            ci: &ci
+              - .github/workflows/ci.yaml
+              - .pre-commit-config.yaml
+            terraform:
+              - *ci
+              - terraform/**
+            python:
+              - *ci
+              - app/**
+
+  # The repo's own hooks: file hygiene, check-yaml, private-key and gitleaks
+  # scans, shellcheck, ruff. terraform-fmt is a `language: system` hook that
+  # needs the terraform binary, so CI skips it here and runs it in the
+  # `terraform` job instead.
+  pre-commit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Install pre-commit
+        run: uv tool install "pre-commit==${PRE_COMMIT_VERSION}"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run hooks
+        env:
+          SKIP: terraform-fmt
+        run: pre-commit run --all-files --show-diff-on-failure
+      # The gitleaks hook above scans only staged changes, and nothing is
+      # staged in CI, so it passes having scanned nothing. This is the real
+      # scan: the full checked-out history, same gitleaks version as the hook.
+      - name: Install gitleaks
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "$tmp/gitleaks.tgz" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $tmp/gitleaks.tgz" | sha256sum --strict -c -
+          tar -xz -f "$tmp/gitleaks.tgz" -C "$HOME/.local/bin" gitleaks
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Scan history for secrets
+        run: gitleaks git --redact --no-banner --verbose
+
+  # Same commit-msg hooks as locally, run over every non-merge commit in the
+  # PR. Not on push to main: GitHub's "Merge pull request #N" commits would
+  # fail the convention.
+  commits:
+    # Renovate's titles ("chore(deps): update … to …") run past the
+    # 50-character subject limit, and this job checks the commits on the
+    # branch, not the message the owner types when squash-merging. The
+    # human rules still apply to every other pull request.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'renovate[bot]'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Install pre-commit
+        run: uv tool install "pre-commit==${PRE_COMMIT_VERSION}"
+      - name: Check commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          status=0
+          msg=$(mktemp)
+          for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
+            git log -1 --format=%B "$sha" > "$msg"
+            echo "-- $(git log -1 --format='%h %s' "$sha")"
+            # Both commit-msg hooks, by id: without one, pre-commit also runs
+            # every hook that declares no stages, once per commit.
+            for hook in conventional-pre-commit commit-msg-format; do
+              pre-commit run "$hook" \
+                --hook-stage commit-msg --commit-msg-filename "$msg" || status=1
+            done
+          done
+          exit "$status"
+
+  # One directory per cloud under terraform/ (and shared modules beside
+  # them). Nothing here reaches a cloud: fmt, init without a backend,
+  # validate and tflint need no credentials. The job passes trivially until
+  # terraform/ has a root module.
+  terraform:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+      # Skipped in the pre-commit job, which has no terraform binary.
+      - name: terraform fmt
+        run: |
+          if [ -d terraform ]; then
+            terraform fmt -recursive -check -diff terraform
+          fi
+      # backend.tf is gitignored, so -backend=false is the only init that
+      # can work here; validate needs no variables and no credentials.
+      # A root module is any directory directly under terraform/ that holds
+      # .tf files; terraform/modules/ is shared code and is skipped.
+      - name: terraform init, validate and tflint
+        run: |
+          status=0
+          for dir in terraform/*/; do
+            [ -d "$dir" ] || continue
+            case "$dir" in terraform/modules/) continue ;; esac
+            compgen -G "${dir}*.tf" > /dev/null || continue
+            echo "-- ${dir}"
+            terraform -chdir="$dir" init -backend=false -input=false || status=1
+            terraform -chdir="$dir" validate || status=1
+            tflint --chdir="$dir" || status=1
+          done
+          exit "$status"
+
+  # The app: ruff and pytest, run with uv. The steps skip themselves until
+  # app/pyproject.toml exists. hashFiles is available in step conditions
+  # only, not in a job-level `if`.
+  python:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: hashFiles('app/pyproject.toml') != ''
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: ruff
+        if: hashFiles('app/pyproject.toml') != ''
+        working-directory: app
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: pytest
+        if: hashFiles('app/pyproject.toml') != ''
+        working-directory: app
+        run: uv run pytest
