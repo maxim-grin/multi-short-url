@@ -1,9 +1,12 @@
+import base64
+import hashlib
 import json
 import random
 import re
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
+from importlib.resources import files
 from urllib.parse import urlsplit
 
 from .codes import is_code, new_code
@@ -16,6 +19,24 @@ JSON = {"Content-Type": "application/json", **NOSNIFF}
 MAX_ATTEMPTS = 5
 MAX_BODY = 8192
 TEXT = {"Content-Type": "text/plain; charset=utf-8", **NOSNIFF}
+
+
+def _hash(page: str, tag: str) -> str:
+    block = re.search(f"<{tag}>(.*?)</{tag}>", page, re.DOTALL)
+    assert block, tag
+    digest = hashlib.sha256(block[1].encode()).digest()
+    return f"'sha256-{base64.b64encode(digest).decode()}'"
+
+
+_PAGE = files("shortener").joinpath("page.html").read_text(encoding="utf-8")
+HTML = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": (
+        f"default-src 'none'; script-src {_hash(_PAGE, 'script')}; "
+        f"style-src {_hash(_PAGE, 'style')}; connect-src 'self'"
+    ),
+    **NOSNIFF,
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +88,10 @@ class Shortener:
 
     def handle(self, request: Request) -> Response:
         method, path = request.method, request.path
+        if path == "/":
+            if method in ("GET", "HEAD"):
+                return Response(200, dict(HTML), _PAGE.encode())
+            return text(405, "method not allowed", Allow="GET, HEAD")
         if path == "/healthz":
             if method in ("GET", "HEAD"):
                 return text(200, "ok")

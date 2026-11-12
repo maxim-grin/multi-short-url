@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shorten a link</title>
+<style>
+body { font: 16px/1.4 system-ui, sans-serif; max-width: 36rem; margin: 3rem auto; padding: 0 1rem; }
+.row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+input { flex: 1; min-width: 0; padding: 0.5rem; font: inherit; }
+button { padding: 0.5rem 1rem; font: inherit; min-width: 6rem; }
+#error { color: #b00020; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>Shorten a link</h1>
+<div class="row">
+<input id="long-url" type="url" placeholder="https://example.com/a/long/link" aria-label="Long URL" autofocus>
+<button id="shorten" type="button">Shorten</button>
+</div>
+<div class="row">
+<input id="short-url" type="text" readonly aria-label="Short URL">
+<button id="copy" type="button">Copy</button>
+</div>
+<p id="error" role="alert"></p>
+<script>
+const $ = (id) => document.getElementById(id);
+const MESSAGES = {
+  400: "That does not look like a valid link.",
+  413: "That link is too long.",
+  429: "Too many requests. Try again in a moment.",
+  503: "The service is unavailable. Try again later.",
+};
+
+async function shorten() {
+  $("error").textContent = "";
+  try {
+    const res = await fetch("/api/shorten", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("long-url").value.trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      $("short-url").value = data.short_url;
+    } else {
+      $("error").textContent = data.error && res.status === 400
+        ? data.error
+        : MESSAGES[res.status] || "Something went wrong.";
+    }
+  } catch {
+    $("error").textContent = "Could not reach the service.";
+  }
+}
+
+$("shorten").addEventListener("click", shorten);
+$("long-url").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") shorten();
+});
+$("copy").addEventListener("click", async () => {
+  const value = $("short-url").value;
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    $("error").textContent = "Could not copy. Select the link and copy it by hand.";
+    return;
+  }
+  $("copy").textContent = "Copied";
+  setTimeout(() => { $("copy").textContent = "Copy"; }, 1500);
+});
+</script>
+</body>
+</html>
