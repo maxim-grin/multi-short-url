@@ -86,6 +86,9 @@ def test_settings_validation() -> None:
     ):
         with pytest.raises(ValueError, match="must"):
             Settings(prefix, base)
+    for base in ("https://", "https://x/sub", "https:///sub"):
+        with pytest.raises(ValueError, match="base_url"):
+            Settings("home", base)
     assert Settings("home", "https://x/").base_url == "https://x"
 
 

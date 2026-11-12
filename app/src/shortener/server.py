@@ -54,20 +54,13 @@ def to_request(
 
 def _length(content_length: str | None, limit: int) -> int | Response:
     # The one place that parses Content-Length and picks 413 versus 400.
-    if content_length is None or not (
-        content_length.isascii() and content_length.isdigit()
-    ):
+    if content_length is None:  # no header means an empty body, as on other wrappers
+        return 0
+    if not (content_length.isascii() and content_length.isdigit()):
         return error(400, "bad Content-Length")
     if len(content_length) > 10 or int(content_length) > limit:  # cap before int()
         return error(413, "body too large")
     return int(content_length)
-
-
-def read_body(
-    rfile: BufferedIOBase, content_length: str | None, limit: int = MAX_BODY
-) -> bytes | None:
-    length = _length(content_length, limit)
-    return None if isinstance(length, Response) else rfile.read(length)
 
 
 def respond(
@@ -96,12 +89,12 @@ def body_for(method: str, response: Response) -> bytes:
 
 def make_handler(app: Shortener) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        timeout = 10  # a stalled client must not hold a thread forever
+        # shortcut: timeout is per read, not per request; put a buffering front end
+        # or a thread cap in front when exposed beyond the LAN
+        timeout = 10
 
         def _serve(self) -> None:
             response = respond(app, self.command, self.path, self.headers, self.rfile)  # type: ignore[arg-type]
-            if response.status in (400, 413):
-                self.close_connection = True  # an unread body would poison it
             self.send_response(response.status)
             for name, value in response.headers.items():
                 self.send_header(name, value)

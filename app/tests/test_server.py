@@ -11,7 +11,6 @@ from shortener.server import (
     body_for,
     load_config,
     make_handler,
-    read_body,
     respond,
     to_request,
 )
@@ -54,23 +53,6 @@ def test_to_request_drops_query_and_fragment() -> None:
     assert request.method == "GET"
 
 
-@pytest.mark.parametrize("length", ["9999", "-1", "abc", None])
-def test_read_body_rejects_without_reading(length: str | None) -> None:
-    rfile = io.BytesIO(b"x" * 20)
-    assert read_body(rfile, length) is None
-    assert rfile.tell() == 0
-
-
-def test_read_body_returns_the_bytes() -> None:
-    assert read_body(io.BytesIO(b"hello world"), "5") == b"hello"
-
-
-def test_huge_content_length_is_too_large_not_an_error() -> None:
-    rfile = io.BytesIO(b"x")
-    assert read_body(rfile, "9" * 5000) is None
-    assert rfile.tell() == 0
-
-
 def _app(cls: type[Shortener] = Shortener) -> Shortener:
     settings = Settings("homelab", "http://h")
     return cls(MemoryStore(), settings, random.Random(1), RateLimiter(lambda: 0.0))
@@ -90,8 +72,14 @@ def test_respond_maps_body_problems() -> None:
     assert _post("9000").status == 413
     assert _post("9" * 5000).status == 413
     assert _post("abc").status == 400
-    assert _post(None).status == 400
+    assert _post(None, b"").status == 400  # empty body is not valid JSON
     assert _post("2", b"{}").status == 400  # JSON without a url
+
+
+def test_post_without_length_is_routed_by_the_core() -> None:
+    no_body = io.BytesIO()
+    assert respond(_app(), "POST", "/healthz", {}, no_body).status == 405
+    assert respond(_app(), "POST", "/nope", {}, no_body).status == 404
 
 
 def test_respond_turns_a_crash_into_a_constant_500(

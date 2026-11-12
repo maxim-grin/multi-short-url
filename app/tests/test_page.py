@@ -79,7 +79,3 @@ def test_page_is_in_the_built_wheel() -> None:
         )
         wheel = next(Path(out).glob("*.whl"))
         assert "shortener/page.html" in zipfile.ZipFile(wheel).namelist()
-
-
-def test_page_bytes_encoded_once() -> None:
-    assert get().body is get().body

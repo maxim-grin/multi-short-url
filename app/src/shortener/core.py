@@ -67,7 +67,11 @@ class Settings:
             )
         if not self.base_url.startswith(("http://", "https://")):
             raise ValueError("base_url must start with http:// or https://")
-        object.__setattr__(self, "base_url", self.base_url.removesuffix("/"))
+        base = self.base_url.removesuffix("/")
+        parts = urlsplit(base)
+        if not parts.hostname or parts.path:
+            raise ValueError("base_url must have a host and no path")
+        object.__setattr__(self, "base_url", base)
 
 
 def error(status: int, reason: str, **extra: str) -> Response:
