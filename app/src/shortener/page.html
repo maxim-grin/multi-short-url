@@ -32,7 +32,12 @@ const MESSAGES = {
   503: "The service is unavailable. Try again later.",
 };
 
+let busy = false;
+
 async function shorten() {
+  if (busy) return;
+  busy = true;
+  $("shorten").disabled = true;
   $("error").textContent = "";
   try {
     const res = await fetch("/api/shorten", {
@@ -41,7 +46,7 @@ async function shorten() {
       body: JSON.stringify({ url: $("long-url").value.trim() }),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) {
+    if (res.ok && data.short_url) {
       $("short-url").value = data.short_url;
     } else {
       $("error").textContent = data.error && res.status === 400
@@ -50,19 +55,31 @@ async function shorten() {
     }
   } catch {
     $("error").textContent = "Could not reach the service.";
+  } finally {
+    busy = false;
+    $("shorten").disabled = false;
+  }
+}
+
+async function copyText(field) {
+  try {
+    await navigator.clipboard.writeText(field.value);
+    return true;
+  } catch {
+    // clipboard is missing on plain http; fall back to the old API
+    field.select();
+    return document.execCommand("copy");
   }
 }
 
 $("shorten").addEventListener("click", shorten);
 $("long-url").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") shorten();
+  if (e.key === "Enter" && !e.repeat && !e.isComposing) shorten();
 });
 $("copy").addEventListener("click", async () => {
-  const value = $("short-url").value;
-  if (!value) return;
-  try {
-    await navigator.clipboard.writeText(value);
-  } catch {
+  const field = $("short-url");
+  if (!field.value) return;
+  if (!(await copyText(field))) {
     $("error").textContent = "Could not copy. Select the link and copy it by hand.";
     return;
   }

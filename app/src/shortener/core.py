@@ -29,6 +29,7 @@ def _hash(page: str, tag: str) -> str:
 
 
 _PAGE = files("shortener").joinpath("page.html").read_text(encoding="utf-8")
+_PAGE_BYTES = _PAGE.encode()
 HTML = {
     "Content-Type": "text/html; charset=utf-8",
     "Content-Security-Policy": (
@@ -90,7 +91,7 @@ class Shortener:
         method, path = request.method, request.path
         if path == "/":
             if method in ("GET", "HEAD"):
-                return Response(200, dict(HTML), _PAGE.encode())
+                return Response(200, dict(HTML), _PAGE_BYTES)
             return text(405, "method not allowed", Allow="GET, HEAD")
         if path == "/healthz":
             if method in ("GET", "HEAD"):
