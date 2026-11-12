@@ -3,8 +3,11 @@
 **/.venv
 **/tests
 docs
-.env*
+**/.env*
 **/__pycache__
 .*_cache
 **/.*_cache
 .superpowers
+**/*.db
+.github
+Dockerfile

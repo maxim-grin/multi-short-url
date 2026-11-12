@@ -14,10 +14,13 @@ COPY app/src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12-slim-bookworm
-RUN useradd --uid 10001 shortener && mkdir /data && chown shortener /data
+# uid 10001; a PV mounted at /data is often root-owned, so the pod needs securityContext fsGroup 10001.
+RUN groupadd --gid 10001 shortener \
+ && useradd --uid 10001 --gid 10001 --no-create-home shortener \
+ && mkdir /data && chown 10001:10001 /data
 COPY --from=build /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" SHORTENER_DB_PATH=/data/links.db PORT=8080
-USER shortener
+USER 10001:10001
 VOLUME /data
 
 EXPOSE 8080
