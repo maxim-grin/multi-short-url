@@ -1,7 +1,7 @@
 # Without this, `pre-commit install` wires up only the pre-commit stage and
 # the commit-msg hook is silently never installed -- a malformed commit
 # message then lands unchecked and nothing says why.
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 
 # A hook that names no stages would otherwise run at every installed stage:
 # the file checks would run a second time, on no files, at commit-msg.
@@ -72,3 +72,23 @@ repos:
         entry: terraform fmt -recursive -check -diff
         files: ^terraform/.*\.tf$
         pass_filenames: false
+
+      # Local hooks, not mirrors-mypy: running through the app's uv
+      # environment means mypy and pytest come from app/uv.lock and cannot
+      # drift. Needs uv on PATH (https://docs.astral.sh/uv/).
+      - id: mypy
+        name: mypy
+        language: system
+        entry: bash -c 'cd app && exec uv run mypy'
+        files: ^app/.*\.py$
+        pass_filenames: false
+
+      # pre-push, not pre-commit: TDD means the suite grows with every
+      # commit, and the commit hook should stay instant.
+      - id: pytest
+        name: pytest
+        language: system
+        entry: bash -c 'cd app && exec uv run pytest -q'
+        files: ^app/
+        pass_filenames: false
+        stages: [pre-push]

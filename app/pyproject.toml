@@ -1,0 +1,51 @@
+[project]
+name = "shortener"
+version = "0.1.0"
+description = "A deliberately small URL shortener, deployed to several clouds."
+requires-python = ">=3.12"
+# The core uses the standard library only. A cloud's store client (boto3,
+# google-cloud-firestore, ...) is an optional extra added with that cloud,
+# so a deployment bundles one client, not all of them.
+dependencies = []
+
+# A dependency group, not an optional-dependencies extra: uv installs the dev
+# group by default, so a bare `uv sync` or `uv run` keeps these present. As
+# an extra they would be missing after a plain `uv sync`, and every hook that
+# shells out to `uv run` would fail or, worse, find nothing to run.
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.17.4",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shortener"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "UP", "B", "SIM", "C4", "DTZ", "BLE", "RUF", "FURB",
+    "PT", "T10", "T20",
+]
+
+[tool.mypy]
+files = ["src/shortener"]
+pretty = true
+# Without this, mypy never checks the body of an unannotated function.
+check_untyped_defs = true
+# Every function under src/ is annotated; this keeps the gate shut.
+disallow_untyped_defs = true
+warn_unused_ignores = true

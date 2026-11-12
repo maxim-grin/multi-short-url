@@ -7,7 +7,14 @@ about _working on_ the repo.
 
 ## What is decided
 
-- **Python**, one codebase. Third-party libraries are allowed, kept small.
+- **Python 3.12+**, one codebase, **no web framework**. The core uses the
+  standard library only. A cloud's store client (boto3, google-cloud-firestore,
+  ...) is an optional extra in `app/pyproject.toml`, added with that cloud, so
+  a deployment bundles one client and not all of them.
+- **uv** manages the virtual environment and lock file (`app/uv.lock`, committed).
+  It is a development and build tool: it is not installed in, or copied into,
+  any runtime image or bundle.
+- **pytest**, and **tests come first** (see Development).
 - **Terraform deploys every cloud**, Cloudflare and Vercel included. The
   homelab is the exception: its manifests live in the homelab repo and
   ArgoCD delivers them.
@@ -21,8 +28,38 @@ about _working on_ the repo.
 - **The path is `/<cloud prefix>/<code>`**, for example `/g/abc123`. The
   prefix is a routing aid, not part of the secret code.
 
-Not yet decided: the web layer (plain WSGI/ASGI or a small framework), the
-directory layout, the store per cloud. Do not assume them; ask.
+Layout so far: the app lives in `app/` (`src/shortener/`, `tests/`), Terraform
+in `terraform/<cloud>/` with shared code in `terraform/modules/`. Not yet
+decided: how each cloud's entry point wraps the core, and the store per cloud.
+Do not assume them; ask.
+
+## Development
+
+**Test-driven, no exceptions for "small" changes.** Use the superpowers
+`test-driven-development` skill. For every behaviour: write one failing test,
+run it and see it fail for the right reason, write the least code that passes,
+run the suite, then refactor with the tests green. A test that has never been
+seen to fail proves nothing. Tests and the code they drive land in the same
+commit.
+
+- Core logic is tested directly, as plain functions and classes. No test
+  starts a server or touches a network.
+- Stores share one contract test suite that every implementation must pass,
+  including the conditional "create only if absent" write. The in-memory store
+  is the reference.
+- One test suite, no fast/slow split. Tests do not need a cloud account or
+  credentials; the contract suite runs every store against the in-memory
+  reference, and real cloud stores are checked by hand after a deploy.
+- Runtime dependencies stay empty in the core. Adding one needs a reason a
+  reviewer can read in the PR.
+
+```bash
+cd app
+uv sync                  # creates .venv from uv.lock; installs the dev group
+uv run pytest -q         # the suite
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+```
 
 ## Branch first
 
@@ -124,7 +161,7 @@ pre-commit run --all-files                     # what the CI pre-commit job runs
 terraform fmt -recursive -check terraform      # formatting
 terraform -chdir=terraform/<cloud> init -backend=false && terraform -chdir=terraform/<cloud> validate
 tflint --chdir=terraform/<cloud>
-(cd app && uv run ruff check . && uv run ruff format --check . && uv run pytest)
+(cd app && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest)
 ```
 
 CI runs the same checks on every PR: `pre-commit`, `commits`, `terraform`,

@@ -59,9 +59,10 @@ jobs:
               - app/**
 
   # The repo's own hooks: file hygiene, check-yaml, private-key and gitleaks
-  # scans, shellcheck, ruff. terraform-fmt is a `language: system` hook that
-  # needs the terraform binary, so CI skips it here and runs it in the
-  # `terraform` job instead.
+  # scans, shellcheck, ruff. terraform-fmt, mypy and pytest are
+  # `language: system` hooks that need the terraform binary or the app's uv
+  # environment, so CI skips them here and runs them in the `terraform` and
+  # `python` jobs instead.
   pre-commit:
     runs-on: ubuntu-26.04
     timeout-minutes: 15
@@ -82,7 +83,7 @@ jobs:
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Run hooks
         env:
-          SKIP: terraform-fmt
+          SKIP: terraform-fmt,mypy,pytest
         run: pre-commit run --all-files --show-diff-on-failure
       # The gitleaks hook above scans only staged changes, and nothing is
       # staged in CI, so it passes having scanned nothing. This is the real
@@ -200,12 +201,20 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
+      - name: sync (fails if uv.lock is stale)
+        if: hashFiles('app/pyproject.toml') != ''
+        working-directory: app
+        run: uv sync --frozen
       - name: ruff
         if: hashFiles('app/pyproject.toml') != ''
         working-directory: app
         run: |
           uv run ruff check .
           uv run ruff format --check .
+      - name: mypy
+        if: hashFiles('app/pyproject.toml') != ''
+        working-directory: app
+        run: uv run mypy
       - name: pytest
         if: hashFiles('app/pyproject.toml') != ''
         working-directory: app
