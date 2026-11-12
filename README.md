@@ -17,7 +17,7 @@ interesting part; running it everywhere is.
 
 ## Status
 
-Early. The core is not written yet and nothing is deployed. Planned targets: the
+Early. The core and a standard-library server are written; nothing is deployed. Planned targets: the
 homelab (Kubernetes through ArgoCD, with its manifests in a separate repo), AWS,
 Azure, Google Cloud, Cloudflare, Oracle Cloud and Vercel.
 
@@ -28,6 +28,20 @@ Azure, Google Cloud, Cloudflare, Oracle Cloud and Vercel.
 - Terraform deploys every cloud, with one build and publish per cloud. There is
   no image shared by all of them.
 - uv for the environment, pytest, ruff and mypy. Tests come first.
+
+## Running
+
+```bash
+cd app
+SHORTENER_PREFIX=homelab SHORTENER_BASE_URL=http://localhost:8080 \
+  SHORTENER_DB_PATH=/tmp/links.db uv run python -m shortener
+```
+
+`SHORTENER_PREFIX`, `SHORTENER_BASE_URL` and `SHORTENER_DB_PATH` are required;
+`PORT` defaults to 8080. Anyone who can reach it can create links, with no login.
+The 1-per-second creation limit is best-effort, and a patient flood can still
+push out the 1000 links. The homelab instance is reachable only on the local
+network.
 
 ## Development
 
