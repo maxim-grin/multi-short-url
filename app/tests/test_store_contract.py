@@ -1,15 +1,18 @@
 import pytest
 
 from shortener.memory import MemoryStore
+from shortener.sqlite_store import SqliteStore
 from shortener.store import Store
 
-STORES = ["memory"]
+STORES = ["memory", "sqlite"]
 
 
 @pytest.fixture(params=STORES)
-def store(request) -> Store:
-    # Task 3 adds "sqlite" to STORES and a branch here.
-    return {"memory": MemoryStore}[request.param]()
+def store(request, tmp_path) -> Store:
+    return {
+        "memory": MemoryStore,
+        "sqlite": lambda: SqliteStore(str(tmp_path / "links.db")),
+    }[request.param]()
 
 
 def test_first_create_returns_true(store):
@@ -34,7 +37,7 @@ def fill(store, n):
 def test_trim_below_trigger_deletes_nothing(store):
     fill(store, 4)
     assert store.trim(keep=3, trigger=5) == 0
-    assert store.get("code00") is not None
+    assert all(store.get(f"code{i:02}") for i in range(4))
 
 
 def test_trim_at_trigger_keeps_newest(store):
