@@ -52,6 +52,9 @@ commit.
   reference, and real cloud stores are checked by hand after a deploy.
 - Comments are short. Say why, never what the code already says; one line
   unless the reason needs more. No history ("changed from...") or narration.
+- Every function, method and class under `src/` has a Google-style docstring:
+  a summary line, `Args`, `Returns` and `Raises` where they apply, and
+  `Attributes` for classes with fields. Keep them short. Tests are exempt.
 - Runtime dependencies stay empty in the core. Adding one needs a reason a
   reviewer can read in the PR.
 
