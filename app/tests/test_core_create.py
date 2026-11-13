@@ -11,7 +11,7 @@ from shortener.core import (
 )
 from shortener.limiter import RateLimiter
 from shortener.memory import MemoryStore
-from shortener.store import KEEP, TRIGGER, StoreError
+from shortener.store import StoreError
 
 URL = "https://example.com/page"
 
@@ -148,7 +148,7 @@ def test_store_error_on_create_is_503() -> None:
 def test_trim_runs_once_after_create() -> None:
     store = Stub()
     post(make(store), {"url": URL})
-    assert store.trims == [(KEEP, TRIGGER)]
+    assert store.trims == [(10_000, 11_000)]
 
 
 def test_trim_failure_still_201() -> None:

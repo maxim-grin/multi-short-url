@@ -10,6 +10,7 @@ from shortener.server import (
     ConfigError,
     body_for,
     load_config,
+    main,
     make_handler,
     respond,
     to_request,
@@ -40,6 +41,14 @@ def test_port_is_read_and_must_be_numeric() -> None:
     assert load_config({**ENV, "PORT": "9000"}).port == 9000
     with pytest.raises(ConfigError, match="PORT"):
         load_config({**ENV, "PORT": "http"})
+
+
+def test_keep_is_read_from_the_environment() -> None:
+    assert load_config(ENV).settings.keep == 10_000
+    assert load_config({**ENV, "SHORTENER_KEEP": "500"}).settings.keep == 500
+    for bad in ("many", "0"):
+        with pytest.raises(ConfigError, match=r"(?i)keep"):
+            load_config({**ENV, "SHORTENER_KEEP": bad})
 
 
 def test_bad_prefix_is_a_config_error() -> None:
@@ -107,3 +116,16 @@ def test_head_never_gets_a_body() -> None:
 
 def test_handler_has_a_socket_timeout() -> None:
     assert 0 < make_handler(_app()).timeout <= 30
+
+
+def test_unopenable_database_exits_with_one_line(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, value in {
+        **ENV,
+        "SHORTENER_DB_PATH": str(tmp_path / "no" / "x.db"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(SystemExit) as e:
+        main()
+    assert str(e.value).startswith("shortener: ")

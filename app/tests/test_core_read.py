@@ -86,7 +86,13 @@ def test_settings_validation() -> None:
     ):
         with pytest.raises(ValueError, match="must"):
             Settings(prefix, base)
-    for base in ("https://", "https://x/sub", "https:///sub"):
+    for base in (
+        "https://",
+        "https://x/sub",
+        "https:///sub",
+        "https://x?q=1",
+        "https://x#f",
+    ):
         with pytest.raises(ValueError, match="base_url"):
             Settings("home", base)
     assert Settings("home", "https://x/").base_url == "https://x"
@@ -102,3 +108,15 @@ def test_every_response_has_nosniff() -> None:
         Request("POST", "/healthz"),
     ):
         assert s.handle(req).headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_settings_keep_defaults_to_10000_and_trigger_is_10_percent_above() -> None:
+    s = Settings("home", "https://x")
+    assert (s.keep, s.trigger) == (10_000, 11_000)
+    assert Settings("home", "https://x", keep=1000).trigger == 1100
+
+
+@pytest.mark.parametrize("keep", [0, -1])
+def test_settings_keep_must_be_positive(keep: int) -> None:
+    with pytest.raises(ValueError, match="keep"):
+        Settings("home", "https://x", keep=keep)

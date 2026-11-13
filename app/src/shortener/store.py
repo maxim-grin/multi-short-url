@@ -1,8 +1,5 @@
 from typing import Protocol
 
-KEEP = 1000
-TRIGGER = 1100
-
 
 class StoreError(Exception):
     """A store failed; the core turns it into a 503."""

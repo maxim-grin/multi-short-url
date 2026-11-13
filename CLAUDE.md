@@ -1,7 +1,7 @@
 # multi-short-url
 
 A deliberately small URL shortener: POST a URL, GET a redirect, the last
-1000 URLs kept. One Python codebase is deployed to several clouds so the
+10,000 URLs kept. One Python codebase is deployed to several clouds so the
 platforms can be compared; the app is not the interesting part. This file is
 about _working on_ the repo.
 
@@ -24,7 +24,7 @@ about _working on_ the repo.
   write ("create only if absent"), so two requests can never claim the same
   code. A store without one is not usable.
 - **Codes are random and server-generated**, never sequential. Redirects are
-  302. Only the last 1000 URLs are kept; there is no per-URL expiry.
+  302. Only the last 10,000 URLs are kept (configurable); there is no per-URL expiry.
 - **The path is `/<cloud prefix>/<code>`**, for example `/g/abc123`. The
   prefix is a routing aid, not part of the secret code.
 

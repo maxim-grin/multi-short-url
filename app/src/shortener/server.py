@@ -13,6 +13,7 @@ from io import BufferedIOBase
 from .core import MAX_BODY, Request, Response, Settings, Shortener, error, text
 from .limiter import RateLimiter
 from .sqlite_store import SqliteStore
+from .store import StoreError
 
 
 class ConfigError(ValueError):
@@ -39,7 +40,8 @@ def load_config(env: Mapping[str, str]) -> Config:
 
     Args:
         env: Environment variables; SHORTENER_PREFIX, SHORTENER_BASE_URL and
-            SHORTENER_DB_PATH are required, PORT defaults to 8080.
+            SHORTENER_DB_PATH are required; PORT defaults to 8080 and
+            SHORTENER_KEEP (links retained) to 10000.
 
     Raises:
         ConfigError: A variable is missing or invalid.
@@ -56,7 +58,11 @@ def load_config(env: Mapping[str, str]) -> Config:
     except ValueError:
         raise ConfigError("PORT must be a number") from None
     try:
-        settings = Settings(env["SHORTENER_PREFIX"], env["SHORTENER_BASE_URL"])
+        keep = int(env.get("SHORTENER_KEEP", "10000"))
+    except ValueError:
+        raise ConfigError("SHORTENER_KEEP must be a number") from None
+    try:
+        settings = Settings(env["SHORTENER_PREFIX"], env["SHORTENER_BASE_URL"], keep)
     except ValueError as e:
         raise ConfigError(str(e)) from None
     return Config(settings, env["SHORTENER_DB_PATH"], port)
@@ -170,7 +176,10 @@ def main() -> None:
         config = load_config(os.environ)
     except ConfigError as e:
         sys.exit(f"shortener: {e}")
-    store = SqliteStore(config.db_path)
+    try:
+        store = SqliteStore(config.db_path)
+    except StoreError as e:
+        sys.exit(f"shortener: {e}")
     app = Shortener(
         store, config.settings, random.SystemRandom(), RateLimiter(time.monotonic)
     )

@@ -21,6 +21,7 @@ def check_url(url: str, own_host: str) -> str | None:
     try:
         parts = urlsplit(url)
         host = parts.hostname
+        parts.port  # noqa: B018 - raises ValueError on a bad port
     except ValueError:
         return "url is malformed"
     if parts.scheme not in ("http", "https"):
@@ -29,6 +30,6 @@ def check_url(url: str, own_host: str) -> str | None:
         return "url needs a host"
     if parts.username is not None or parts.password is not None:
         return "url must not contain credentials"
-    if host == own_host.lower():
+    if host.rstrip(".") == own_host.lower():
         return "url points at this service"
     return None

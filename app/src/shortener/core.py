@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from .codes import is_code, new_code
 from .limiter import RateLimiter
-from .store import KEEP, TRIGGER, Store, StoreError
+from .store import Store, StoreError
 from .urls import check_url
 
 NOSNIFF = {"X-Content-Type-Options": "nosniff"}
@@ -88,17 +88,24 @@ class Settings:
     Attributes:
         prefix: Path prefix of this deployment's links, e.g. "homelab".
         base_url: Public address used in returned short URLs, no trailing slash.
+        keep: Newest links to retain; trimming starts about 10% above it.
     """
 
     prefix: str
     base_url: str
+    keep: int = 10_000
+
+    @property
+    def trigger(self) -> int:
+        """Link count at which trimming starts."""
+        return self.keep + self.keep // 10
 
     def __post_init__(self) -> None:
         """Validate and normalise the settings.
 
         Raises:
-            ValueError: prefix is not a lowercase word, or base_url is not an
-                http(s) address with a host and no path.
+            ValueError: prefix is not a lowercase word, base_url is not an
+                http(s) address with a host and no path, or keep is below 1.
         """
         if not re.fullmatch(r"[a-z][a-z0-9]*", self.prefix):
             raise ValueError(
@@ -108,8 +115,10 @@ class Settings:
             raise ValueError("base_url must start with http:// or https://")
         base = self.base_url.removesuffix("/")
         parts = urlsplit(base)
-        if not parts.hostname or parts.path:
+        if not parts.hostname or parts.path or parts.query or parts.fragment:
             raise ValueError("base_url must have a host and no path")
+        if self.keep < 1:
+            raise ValueError("keep must be at least 1")
         object.__setattr__(self, "base_url", base)
 
 
@@ -238,6 +247,6 @@ class Shortener:
         except StoreError:
             return error(503, "service unavailable")
         with suppress(StoreError):  # the link exists; the next create retries the trim
-            self.store.trim(KEEP, TRIGGER)
+            self.store.trim(self.settings.keep, self.settings.trigger)
         short = f"{self.settings.base_url}/{self.settings.prefix}/{code}"
         return Response(201, dict(JSON), json.dumps({"short_url": short}).encode())
