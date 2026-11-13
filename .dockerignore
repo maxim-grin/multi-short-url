@@ -1,0 +1,13 @@
+.git
+.venv
+**/.venv
+**/tests
+docs
+**/.env*
+**/__pycache__
+.*_cache
+**/.*_cache
+.superpowers
+**/*.db
+.github
+Dockerfile

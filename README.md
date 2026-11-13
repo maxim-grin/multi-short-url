@@ -55,6 +55,13 @@ uv run pytest -q
 Project rules, including commit and PR conventions, are in
 [CLAUDE.md](CLAUDE.md).
 
+## Releases
+
+Images publish to `ghcr.io/maxim-grin/multi-short-url` on `v<semver>` tags only.
+The tag must equal the `version` in `app/pyproject.toml`, or the build fails.
+The image runs as uid 10001, stores data at `/data/links.db` (mount a volume with
+fsGroup 10001) and needs only `SHORTENER_PREFIX` and `SHORTENER_BASE_URL`.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
