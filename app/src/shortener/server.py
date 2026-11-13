@@ -16,17 +16,34 @@ from .sqlite_store import SqliteStore
 
 
 class ConfigError(ValueError):
-    pass
+    """The environment is missing or has an invalid setting."""
 
 
 @dataclass(frozen=True)
 class Config:
+    """Everything the process reads from its environment.
+
+    Attributes:
+        settings: Prefix and base URL for the core.
+        db_path: SQLite file location.
+        port: TCP port to listen on.
+    """
+
     settings: Settings
     db_path: str
     port: int
 
 
 def load_config(env: Mapping[str, str]) -> Config:
+    """Read the configuration.
+
+    Args:
+        env: Environment variables; SHORTENER_PREFIX, SHORTENER_BASE_URL and
+            SHORTENER_DB_PATH are required, PORT defaults to 8080.
+
+    Raises:
+        ConfigError: A variable is missing or invalid.
+    """
     missing = [
         n
         for n in ("SHORTENER_PREFIX", "SHORTENER_BASE_URL", "SHORTENER_DB_PATH")
@@ -48,11 +65,28 @@ def load_config(env: Mapping[str, str]) -> Config:
 def to_request(
     method: str, target: str, headers: Mapping[str, str], body: bytes
 ) -> Request:
+    """Translate HTTP server values into a core Request.
+
+    Args:
+        method: HTTP method.
+        target: Request target; the query string and fragment are dropped.
+        headers: Request headers.
+        body: Raw body.
+    """
     path = target.split("?", 1)[0].split("#", 1)[0]
     return Request(method, path, headers, body)
 
 
 def _length(content_length: str | None, limit: int) -> int | Response:
+    """Parse Content-Length.
+
+    Args:
+        content_length: Header value, or None if absent.
+        limit: Largest body accepted.
+
+    Returns:
+        The byte count to read, or a 400 or 413 Response.
+    """
     # The one place that parses Content-Length and picks 413 versus 400.
     if content_length is None:  # no header means an empty body, as on other wrappers
         return 0
@@ -70,6 +104,15 @@ def respond(
     headers: Mapping[str, str],
     rfile: BufferedIOBase,
 ) -> Response:
+    """Run one request through the core; any crash becomes a 500.
+
+    Args:
+        app: The core.
+        method: HTTP method.
+        target: Request target.
+        headers: Request headers.
+        rfile: Stream the body is read from, for POST only.
+    """
     try:
         body = b""
         if method == "POST":
@@ -84,16 +127,29 @@ def respond(
 
 
 def body_for(method: str, response: Response) -> bytes:
+    """Return the body to send: empty for HEAD, else the response body.
+
+    Args:
+        method: HTTP method of the request.
+        response: The core's response.
+    """
     return b"" if method == "HEAD" else response.body
 
 
 def make_handler(app: Shortener) -> type[BaseHTTPRequestHandler]:
+    """Build a request handler class bound to app.
+
+    Args:
+        app: The core every request goes to.
+    """
+
     class Handler(BaseHTTPRequestHandler):
         # shortcut: timeout is per read, not per request; put a buffering front end
         # or a thread cap in front when exposed beyond the LAN
         timeout = 10
 
         def _serve(self) -> None:
+            """Answer the current request; every method shares this."""
             response = respond(app, self.command, self.path, self.headers, self.rfile)  # type: ignore[arg-type]
             self.send_response(response.status)
             for name, value in response.headers.items():
@@ -109,6 +165,7 @@ def make_handler(app: Shortener) -> type[BaseHTTPRequestHandler]:
 
 
 def main() -> None:
+    """Read the environment, then serve until SIGTERM or SIGINT."""
     try:
         config = load_config(os.environ)
     except ConfigError as e:

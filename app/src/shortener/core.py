@@ -22,6 +22,15 @@ TEXT = {"Content-Type": "text/plain; charset=utf-8", **NOSNIFF}
 
 
 def _hash(page: str, tag: str) -> str:
+    """CSP source for the inline block of an HTML tag.
+
+    Args:
+        page: The HTML page.
+        tag: "script" or "style".
+
+    Returns:
+        The block's sha256 as a quoted CSP hash source.
+    """
     block = re.search(f"<{tag}>(.*?)</{tag}>", page, re.DOTALL)
     assert block, tag
     digest = hashlib.sha256(block[1].encode()).digest()
@@ -42,6 +51,15 @@ HTML = {
 
 @dataclass(frozen=True)
 class Request:
+    """A platform-neutral request.
+
+    Attributes:
+        method: HTTP method.
+        path: Path without query string or fragment.
+        headers: Request headers.
+        body: Raw body; empty if none.
+    """
+
     method: str
     path: str
     headers: Mapping[str, str] = field(default_factory=dict)
@@ -50,6 +68,14 @@ class Request:
 
 @dataclass(frozen=True)
 class Response:
+    """A platform-neutral response.
+
+    Attributes:
+        status: HTTP status code.
+        headers: Response headers.
+        body: Raw body.
+    """
+
     status: int
     headers: dict[str, str]
     body: bytes
@@ -57,10 +83,23 @@ class Response:
 
 @dataclass(frozen=True)
 class Settings:
+    """One deployment's settings.
+
+    Attributes:
+        prefix: Path prefix of this deployment's links, e.g. "homelab".
+        base_url: Public address used in returned short URLs, no trailing slash.
+    """
+
     prefix: str
     base_url: str
 
     def __post_init__(self) -> None:
+        """Validate and normalise the settings.
+
+        Raises:
+            ValueError: prefix is not a lowercase word, or base_url is not an
+                http(s) address with a host and no path.
+        """
         if not re.fullmatch(r"[a-z][a-z0-9]*", self.prefix):
             raise ValueError(
                 "prefix must be lowercase letters and digits, starting with a letter"
@@ -75,23 +114,55 @@ class Settings:
 
 
 def error(status: int, reason: str, **extra: str) -> Response:
+    """Build a JSON error response.
+
+    Args:
+        status: HTTP status code.
+        reason: Short message for the "error" field.
+        **extra: Additional headers.
+    """
     return Response(status, {**JSON, **extra}, json.dumps({"error": reason}).encode())
 
 
 def text(status: int, body: str, **extra: str) -> Response:
+    """Build a plain-text response.
+
+    Args:
+        status: HTTP status code.
+        body: Response text.
+        **extra: Additional headers.
+    """
     return Response(status, {**TEXT, **extra}, body.encode())
 
 
 class Shortener:
+    """The whole app: routes a Request to a Response; no I/O except the store.
+
+    Attributes:
+        store: Where links live.
+        settings: This deployment's prefix and base URL.
+        rng: Randomness for codes.
+        limiter: Whole-service limit on creates.
+    """
+
     def __init__(
         self, store: Store, settings: Settings, rng: random.Random, limiter: RateLimiter
     ) -> None:
+        """Wire the app; all collaborators are injected so tests control them."""
         self.store = store
         self.settings = settings
         self.rng = rng
         self.limiter = limiter
 
     def handle(self, request: Request) -> Response:
+        """Route a request.
+
+        Args:
+            request: The incoming request.
+
+        Returns:
+            The response; failures are statuses, never exceptions.
+        """
         method, path = request.method, request.path
         if path == "/":
             if method in ("GET", "HEAD"):
@@ -117,6 +188,11 @@ class Shortener:
         return text(404, "not found")
 
     def _redirect(self, code: str) -> Response:
+        """302 to the stored URL; 404 if unknown, 503 if the store fails.
+
+        Args:
+            code: A well-formed short code.
+        """
         try:
             url = self.store.get(code)
         except StoreError:
@@ -126,6 +202,14 @@ class Shortener:
         return Response(302, {"Location": url, **NOSNIFF}, b"")
 
     def _create(self, body: bytes) -> Response:
+        """Validate, rate-limit and store a new link.
+
+        Args:
+            body: Raw request body, JSON {"url": "..."}.
+
+        Returns:
+            201 with the short URL, or 400, 413, 429 or 503.
+        """
         if len(body) > MAX_BODY:
             return error(413, "body too large")
         try:

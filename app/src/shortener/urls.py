@@ -4,7 +4,15 @@ MAX_URL_LENGTH = 2000
 
 
 def check_url(url: str, own_host: str) -> str | None:
-    """Return None if url is acceptable, else a short reason."""
+    """Validate a URL a visitor wants shortened.
+
+    Args:
+        url: The submitted URL.
+        own_host: Lowercase host of this service; links to it are refused.
+
+    Returns:
+        None if acceptable, else a short reason for the 400 response.
+    """
     if not url or len(url) > MAX_URL_LENGTH:
         return f"url must be 1 to {MAX_URL_LENGTH} characters"
     # ASCII only also rejects IDN hosts; also no spaces or control characters.
