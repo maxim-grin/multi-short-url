@@ -1,7 +1,7 @@
 # multi-short-url
 
 A deliberately small URL shortener: POST a URL, GET a redirect, the last
-1000 URLs kept. One Python codebase is deployed to several clouds so the
+10,000 URLs kept. One Python codebase is deployed to several clouds so the
 platforms can be compared; the app is not the interesting part. This file is
 about _working on_ the repo.
 
@@ -24,7 +24,7 @@ about _working on_ the repo.
   write ("create only if absent"), so two requests can never claim the same
   code. A store without one is not usable.
 - **Codes are random and server-generated**, never sequential. Redirects are
-  302. Only the last 1000 URLs are kept; there is no per-URL expiry.
+  302. Only the last 10,000 URLs are kept (configurable); there is no per-URL expiry.
 - **The path is `/<cloud prefix>/<code>`**, for example `/g/abc123`. The
   prefix is a routing aid, not part of the secret code.
 
@@ -52,6 +52,9 @@ commit.
   reference, and real cloud stores are checked by hand after a deploy.
 - Comments are short. Say why, never what the code already says; one line
   unless the reason needs more. No history ("changed from...") or narration.
+- Every function, method and class under `src/` has a Google-style docstring:
+  a summary line, `Args`, `Returns` and `Raises` where they apply, and
+  `Attributes` for classes with fields. Keep them short. Tests are exempt.
 - Runtime dependencies stay empty in the core. Adding one needs a reason a
   reviewer can read in the PR.
 
